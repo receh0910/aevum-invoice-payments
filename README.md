@@ -114,9 +114,18 @@ reads back both statuses. `DemoLive.s.sol` is the same flow sized for the
 Discord faucet grant (2 + 1 tUSD8). Test wallets only; keys are read from
 environment variables, never stored in this repo.
 
+## Verify an invoice in the browser (no wallet)
+
+`web/index.html` is a single-file, read-only verifier: open it in any browser,
+paste an invoice id, and it calls `invoiceStatus()` on the deployed contract
+through the public Aevum RPC and shows status, merchant, exact amount, payer,
+and timestamps. Two buttons load the demo invoices above. No wallet, no
+backend, no keys — verification is a plain `eth_call` anyone can repeat.
+
 ## Project structure
 
 ```
+web/index.html              read-only browser verifier (eth_call via public RPC)
 src/InvoicePayments.sol     the contract
 src/mocks/MockUSD8.sol      local tUSD8 stand-in for tests (6 decimals,
                             EIP-712 domain "tUSD8"/"2", permit + EIP-3009)
