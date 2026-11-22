@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InvoicePayments — public invoice verifier (Aevum testnet)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 44rem; padding: 0 1rem; line-height: 1.5; }
+  code, input { font-family: ui-monospace, monospace; font-size: .9em; }
+  input { width: 100%; padding: .5rem; box-sizing: border-box; }
+  button { padding: .5rem 1rem; margin: .5rem .25rem 0 0; cursor: pointer; }
+  table { border-collapse: collapse; margin-top: 1rem; width: 100%; }
+  td, th { border: 1px solid #ccc; padding: .4rem .6rem; text-align: left; word-break: break-all; }
+  .paid { color: #0a7d28; font-weight: 700; }
+  .open { color: #b26a00; font-weight: 700; }
+  .bad { color: #b00020; font-weight: 700; }
+  small { color: #555; }
+</style>
+</head>
+<body>
+<h1>InvoicePayments — public invoice verifier</h1>
+<p>Read-only verification for <strong>InvoicePayments</strong> invoices on the
+QDay Aevum testnet (chain 44005). Paste an invoice id and this page calls
+<code>invoiceStatus()</code> on the deployed contract through the public RPC —
+no wallet, no backend, nothing to trust.</p>
+
+<p>Contract: <a href="https://explorer-test.qday.info/address/0x92af365d48A7D5f6E23cE880BEe44F1445d76651"><code>0x92af365d48A7D5f6E23cE880BEe44F1445d76651</code></a><br>
+Token (tUSD8): <code>0x456569838f1d43009A91ebA4263147Afd7233483</code></p>
+
+<label for="inv">Invoice id (bytes32)</label>
+<input id="inv" placeholder="0x…" spellcheck="false">
+<div>
+  <button id="check">Verify invoice</button>
+  <button data-id="0x47ef503fa2ebd3c3581f63c77b281bff51a7320ea97a5fbae7415960427d6ed5">Demo invoice A (paid, standard)</button>
+  <button data-id="0xeaab59bdd9123538db2c36bf8eee43b3f1b307b889f0a5fbc74f603375c72819">Demo invoice B (paid, gasless)</button>
+</div>
+<div id="out"></div>
+
+<script>
+const RPC = "https://rpc-test.qday.info";
+const CONTRACT = "0x92af365d48A7D5f6E23cE880BEe44F1445d76651";
+// invoiceStatus(bytes32) -> (uint8 status, address merchant, uint256 amount,
+//   uint64 expiry, bytes32 memoHash, address payer, uint64 paidAt)
+const SEL = "0x9576684a";
+const STATUS = ["None (not found)", "Open", "Paid", "Cancelled", "Expired"];
+const out = document.getElementById("out");
+const input = document.getElementById("inv");
+
+async function ethCall(data) {
+  const r = await fetch(RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call",
+      params: [{ to: CONTRACT, data }, "latest"] })
+  });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message || "RPC error");
+  return j.result;
+}
+const word = (hex, i) => hex.slice(2 + i * 64, 2 + (i + 1) * 64);
+const addr = w => "0x" + w.slice(24);
+const num = w => BigInt("0x" + w);
+const fmtTusd8 = v => (Number(v) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 6 }) + " tUSD8";
+const fmtTime = v => v === 0n ? "—" : new Date(Number(v) * 1000).toISOString();
+
+async function verify(id) {
+  out.innerHTML = "<p>Checking…</p>";
+  try {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(id)) throw new Error("Invoice id must be 0x + 64 hex characters.");
+    const res = await ethCall(SEL + id.slice(2).toLowerCase());
+    const status = Number(num(word(res, 0)));
+    const merchant = addr(word(res, 1));
+    const amount = num(word(res, 2));
+    const expiry = num(word(res, 3));
+    const memoHash = "0x" + word(res, 4);
+    const payer = addr(word(res, 5));
+    const paidAt = num(word(res, 6));
+    const cls = status === 2 ? "paid" : status === 1 ? "open" : "bad";
+    out.innerHTML = `<table>
+      <tr><th>Status</th><td class="${cls}">${STATUS[status] ?? status}</td></tr>
+      <tr><th>Merchant</th><td><a href="https://explorer-test.qday.info/address/${merchant}">${merchant}</a></td></tr>
+      <tr><th>Exact amount</th><td>${fmtTusd8(amount)} (${amount} base units)</td></tr>
+      <tr><th>Expiry (UTC)</th><td>${fmtTime(expiry)}</td></tr>
+      <tr><th>Payer</th><td>${status === 2 ? `<a href="https://explorer-test.qday.info/address/${payer}">${payer}</a>` : "—"}</td></tr>
+      <tr><th>Paid at (UTC)</th><td>${fmtTime(paidAt)}</td></tr>
+      <tr><th>Memo hash</th><td>${memoHash}</td></tr>
+    </table>
+    <p><small>Verified live via <code>eth_call</code> to ${RPC}. The contract never custodies funds:
+    payments settle payer → merchant directly (gasless payments forward atomically in the same transaction).</small></p>`;
+  } catch (e) {
+    out.innerHTML = `<p class="bad">Error: ${e.message}</p>`;
+  }
+}
+document.getElementById("check").addEventListener("click", () => verify(input.value.trim()));
+document.querySelectorAll("button[data-id]").forEach(b =>
+  b.addEventListener("click", () => { input.value = b.dataset.id; verify(b.dataset.id); }));
+</script>
+</body>
+</html>
